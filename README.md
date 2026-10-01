@@ -19,6 +19,31 @@ cp .env.example .env.local   # ANTHROPIC_API_KEY eintragen
 
 Ohne Schlüssel läuft alles mit der lokalen Automatik.
 
+## Veröffentlichen auf Hostinger
+
+Die App braucht einen **Node.js-Server** (KI-Route `/api/ai`). Reines Webhosting über den
+Dateimanager reicht nicht. Nach jedem Merge in `main` baut Hostinger automatisch neu.
+
+1. hPanel → **Websites** → **Website hinzufügen** → **Node.js Web App**
+   (ab Business-Webhosting oder Cloud-Hosting).
+2. **Mit GitHub verbinden** → Repository `mryourich/vysnvideo`, Branch `main`.
+3. Build-Einstellungen:
+   - Framework: **Next.js**
+   - Node-Version: **20** oder **22**
+   - Root-Verzeichnis: `/` (leer lassen)
+   - Build-Befehl: `npm run build`
+   - Startbefehl: `npm start`
+   - Paketmanager: `npm`
+4. **Umgebungsvariablen** (optional, für die KI-Regie): `ANTHROPIC_API_KEY` = dein Schlüssel.
+   Ohne Schlüssel läuft alles mit der lokalen Automatik.
+5. Domain bzw. Subdomain (z. B. `video.deine-domain.com`) der Node.js-App zuweisen.
+6. **Deploy** klicken. Test: `https://<domain>/api/health` liefert `{"status":"ok",...}`
+   (`"ai": true`, wenn der Schlüssel gesetzt ist).
+
+Hinweis: Die Videos werden im Browser verarbeitet und gespeichert – der Server braucht weder
+Speicherplatz für Medien noch Datenbank. HTTPS ist nötig (Hostinger aktiviert SSL automatisch),
+sonst funktionieren Videoverarbeitung und Teilen-Dialog in manchen Browsern nicht.
+
 ## Funktionen
 
 | Bereich | Was passiert |
