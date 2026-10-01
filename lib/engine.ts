@@ -5,9 +5,10 @@
 import { assetUrl } from './db';
 import { FORMATS } from './types';
 import type { MediaAsset, Project } from './types';
-import { clipAt, drawFrame, layout, sourceTime, TRANSITION_TIME } from './render';
+import { clipAt, drawFrame, layout, sourceTime, timelineBeats, TRANSITION_TIME } from './render';
 import type { HitBox, Source, Timed } from './render';
 import { clamp, once, seek } from './util';
+import fixWebmDuration from 'fix-webm-duration';
 
 type Pooled = { el: HTMLVideoElement; gain: GainNode | null };
 
@@ -32,6 +33,7 @@ export class Player {
   private project: Project | null = null;
   private assets = new Map<string, MediaAsset>();
   private timeline: Timed[] = [];
+  private beats: number[] = [];
   private pools = new Map<string, Pooled[]>();
   private images = new Map<string, HTMLImageElement>();
   private music: HTMLAudioElement | null = null;
@@ -71,6 +73,7 @@ export class Player {
     this.project = project;
     assets.forEach((a) => this.assets.set(a.id, a));
     this.timeline = layout(project);
+    this.beats = timelineBeats(project, this.timeline, project.music ? this.assets.get(project.music.assetId)?.analysis?.beats : undefined);
     this.resize();
     const needed = new Set(project.clips.map((c) => c.assetId));
     await Promise.all([...needed].map((id) => this.ensure(id)));
@@ -244,6 +247,7 @@ export class Player {
       source: this.source,
       logo: this.logo,
       selectedText: this.exportTarget ? null : this.selectedText,
+      beats: this.beats,
     });
     if (this.exportTarget) this.ctx.drawImage(this.exportTarget.canvas, 0, 0, this.canvas.width, this.canvas.height);
     if (this.playing) this.onTime(this.t, true);
@@ -396,7 +400,10 @@ export class Player {
     cleanup();
     if (aborted) throw new DOMException('Export abgebrochen', 'AbortError');
     opts.onProgress(1);
-    return { blob: new Blob(chunks, { type: (mime || 'video/webm').split(';')[0] }), ext };
+    let blob = new Blob(chunks, { type: (mime || 'video/webm').split(';')[0] });
+    // MediaRecorder schreibt bei WebM keine Länge – nachtragen, damit Player spulen können
+    if (ext === 'webm') blob = await fixWebmDuration(blob, this.duration * 1000, { logger: false }).catch(() => blob);
+    return { blob, ext };
   }
 
   destroy() {

@@ -2,6 +2,9 @@
 
 export type MediaKind = 'video' | 'image' | 'audio';
 
+/** Erkanntes Wort mit Zeit (Sekunden) */
+export type Word = { text: string; start: number; end: number };
+
 /** Ergebnis der KI-Analyse eines Videos: Abschnitte zwischen Szenenwechseln/Pausen mit Bewertung. */
 export type Segment = {
   start: number;
@@ -37,6 +40,9 @@ export type MediaAsset = {
   /** Vorschaubilder für die Timeline (Data-URLs) */
   thumbs: string[];
   analysis?: MediaAnalysis;
+  /** Ergebnis der Spracherkennung (Zeiten in der Quelldatei) */
+  transcript?: Word[];
+  transcriptLanguage?: string;
   createdAt: string;
 };
 
@@ -50,7 +56,9 @@ export const FORMATS: Record<Format, { label: string; w: number; h: number; hint
 };
 
 export type Filter = 'none' | 'vivid' | 'warm' | 'cool' | 'mono' | 'cinema' | 'fade';
-export type Transition = 'none' | 'fade' | 'zoom' | 'slide' | 'flash' | 'blur';
+export type Transition = 'none' | 'fade' | 'zoom' | 'slide' | 'flash' | 'blur' | 'whip' | 'spin' | 'glitch';
+
+export type Effect = 'none' | 'pulse' | 'shake' | 'flash-beat' | 'glitch' | 'rgb' | 'vhs' | 'grain' | 'vignette' | 'lightleak' | 'glow' | 'mirror' | 'strobe';
 export type Motion = 'none' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right';
 
 export type Clip = {
@@ -65,12 +73,15 @@ export type Clip = {
   /** Übergang am Anfang dieses Clips (vom vorherigen Clip) */
   transition: Transition;
   motion: Motion;
+  /** Video-Effekt (wie in CapCut), Stärke 0–1 */
+  effect?: Effect;
+  effectAmount?: number;
   /** Bildausschnitt: 'cover' füllt das Format, 'contain' zeigt alles mit unscharfem Hintergrund */
   fit: 'cover' | 'contain';
 };
 
-export type TextStyle = 'hook' | 'title' | 'caption' | 'cta' | 'label' | 'price';
-export type TextAnim = 'none' | 'pop' | 'fade' | 'slide-up' | 'typewriter' | 'bounce';
+export type TextStyle = 'hook' | 'title' | 'caption' | 'cta' | 'label' | 'price' | 'neon';
+export type TextAnim = 'none' | 'pop' | 'fade' | 'slide-up' | 'typewriter' | 'bounce' | 'karaoke' | 'word';
 
 export type TextItem = {
   id: string;
@@ -85,6 +96,8 @@ export type TextItem = {
   color: string;
   accent: string;
   size: number;
+  /** Wortgenaue Zeiten (aus der Spracherkennung) für Karaoke-Untertitel */
+  words?: Word[];
 };
 
 export type MusicTrack = {
@@ -122,11 +135,11 @@ export type Project = {
 
 export type Style = 'dynamic' | 'elegant' | 'minimal' | 'bold';
 
-export const STYLES: Record<Style, { label: string; hint: string; cut: number; transitions: Transition[]; anims: TextAnim[]; filter: Filter }> = {
-  dynamic: { label: 'Dynamisch', hint: 'Schnelle Schnitte im Takt, Zooms – ideal für Reels', cut: 1.3, transitions: ['zoom', 'flash', 'slide', 'none'], anims: ['pop', 'bounce'], filter: 'vivid' },
-  elegant: { label: 'Elegant', hint: 'Ruhige Überblendungen, langsame Kamerafahrten', cut: 3.2, transitions: ['fade', 'blur'], anims: ['fade', 'slide-up'], filter: 'cinema' },
-  minimal: { label: 'Minimal', hint: 'Klare harte Schnitte, dezente Texte', cut: 2.2, transitions: ['none'], anims: ['fade'], filter: 'none' },
-  bold: { label: 'Auffällig', hint: 'Große Texte, Blitz-Übergänge, kräftige Farben', cut: 1.6, transitions: ['flash', 'zoom', 'slide'], anims: ['bounce', 'pop', 'typewriter'], filter: 'vivid' },
+export const STYLES: Record<Style, { label: string; hint: string; cut: number; transitions: Transition[]; anims: TextAnim[]; filter: Filter; effects: Effect[] }> = {
+  dynamic: { label: 'Dynamisch', hint: 'Schnelle Schnitte im Takt, Zooms – ideal für Reels', cut: 1.3, transitions: ['zoom', 'whip', 'flash', 'spin', 'none'], anims: ['pop', 'bounce'], filter: 'vivid', effects: ['pulse', 'flash-beat', 'shake'] },
+  elegant: { label: 'Elegant', hint: 'Ruhige Überblendungen, langsame Kamerafahrten', cut: 3.2, transitions: ['fade', 'blur'], anims: ['fade', 'slide-up'], filter: 'cinema', effects: ['lightleak', 'glow', 'vignette'] },
+  minimal: { label: 'Minimal', hint: 'Klare harte Schnitte, dezente Texte', cut: 2.2, transitions: ['none'], anims: ['fade'], filter: 'none', effects: ['vignette'] },
+  bold: { label: 'Auffällig', hint: 'Große Texte, Blitz-Übergänge, kräftige Farben', cut: 1.6, transitions: ['glitch', 'flash', 'zoom', 'whip'], anims: ['bounce', 'pop', 'word'], filter: 'vivid', effects: ['glitch', 'rgb', 'pulse', 'strobe'] },
 };
 
 export type Goal = 'product' | 'offer' | 'brand' | 'event' | 'recruiting';
@@ -163,4 +176,9 @@ export type AiPlan = {
   captions: string[];
   cta: string;
   style?: Style;
+};
+
+/** Antwort der KI-Effekte (/api/ai, mode=effects): je Clip Effekt, Übergang, Filter, Kamerafahrt */
+export type AiEffects = {
+  clips: { effect: Effect; amount: number; transition: Transition; filter: Filter; motion: Motion }[];
 };

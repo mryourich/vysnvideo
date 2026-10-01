@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AudioLines, Captions, Check, Clapperboard, Download, Film, Music, Scissors, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
+import { AudioLines, Captions, Check, Clapperboard, Download, Film, Mic, Scissors, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react';
 import { Brand } from '../components/brand';
 import { Creator } from '../components/creator';
 import { collectGarbage, db } from '../lib/db';
@@ -60,7 +60,7 @@ export default function Home() {
               <h1>Marketing-Videos, <span>automatisch geschnitten.</span></h1>
               <p>Lade Clips, Fotos und Musik hoch – VYSN Video findet die besten Momente, schneidet im Takt, setzt Texte und Übergänge und liefert ein fertiges Reel. Feinschliff im Editor.</p>
               <ul className="hero-points">
-                {['Auto-Schnitt mit KI-Szenenbewertung', 'Pausen in Sprechvideos entfernen', 'Schnitte im Takt der Musik', 'Reels, TikTok, Feed & YouTube', 'Hook, Untertitel & CTA per KI', 'Export als MP4 – direkt im Browser'].map((p) => (
+                {['Auto-Schnitt mit KI-Szenenbewertung', 'Auto-Untertitel per Spracherkennung', 'KI-Effekte im Takt der Musik', 'Pausen in Sprechvideos entfernen', 'Hook, Texte & CTA per KI', 'Export als MP4 – direkt im Browser'].map((p) => (
                   <li key={p}><Check size={16} /> {p}</li>
                 ))}
               </ul>
@@ -106,8 +106,9 @@ export default function Home() {
             <Feature icon={<Scissors />} title="KI-Schnitt" text="Szenenwechsel, Bewegung, Schärfe und Ton werden analysiert. Die stärksten Momente landen im Video, der Hook ganz vorne." />
             <Feature icon={<AudioLines />} title="Im Takt der Musik" text="Tempo und Beats deines Songs werden erkannt – Schnitte sitzen auf dem Beat, Originalton wird automatisch abgesenkt." />
             <Feature icon={<Captions />} title="Texte, die verkaufen" text="Hook, Einblendungen und Call-to-Action – auf Wunsch von der KI-Regie passend zu deinen Bildern geschrieben." />
-            <Feature icon={<Clapperboard />} title="Editor wie in CapCut" text="Timeline mit Trimmen, Teilen, Verschieben, Tempo, Filtern, Übergängen, Kamerafahrten und animierten Texten." />
-            <Feature icon={<Music />} title="Sprechvideos" text="Pausen und Versprecher-Lücken werden automatisch herausgeschnitten. Untertitel aus deinem Skript mit einem Klick." />
+            <Feature icon={<Clapperboard />} title="Editor wie in CapCut" text="Timeline mit Trimmen, Teilen, Verschieben, Tempo, Filtern, Effekten, Übergängen, Kamerafahrten und animierten Texten." />
+            <Feature icon={<Mic />} title="Auto-Untertitel" text="Whisper-KI erkennt jedes gesprochene Wort – als Karaoke- oder Wort-für-Wort-Untertitel. Läuft direkt im Browser, Pausen werden automatisch herausgeschnitten." />
+            <Feature icon={<Wand2 />} title="KI-Effekte" text="Beat-Zoom, Glitch, VHS, Lichtlecks, Glow, Spiegel, Wisch- und Dreh-Übergänge – die KI setzt sie passend zu Szene und Musik." />
             <Feature icon={<Download />} title="Export für jede Plattform" text="9:16, 1:1, 4:5 oder 16:9 in 720p oder 1080p – als MP4 (oder WebM) direkt aus dem Browser." />
           </section>
         ) : null}

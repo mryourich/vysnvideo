@@ -3,7 +3,7 @@
  * (Clips, Übergänge, Kamerafahrten, Texte, Musik im Takt).
  */
 import { FORMATS, GOALS, STYLES } from './types';
-import type { AiPlan, Brief, Clip, MediaAsset, Motion, Project, Segment, TextItem } from './types';
+import type { AiEffects, AiPlan, Brief, Clip, Effect, MediaAsset, Motion, Project, Segment, Style, TextItem, Transition } from './types';
 import { now, uid } from './util';
 
 export const DEFAULT_BRIEF: Brief = {
@@ -87,6 +87,8 @@ export function generateProject(assets: MediaAsset[], brief: Brief, opts: { ai?:
     else if (brief.style === 'elegant') c.motion = i % 2 ? 'zoom-in' : 'zoom-out';
     c.filter = style.filter;
   });
+
+  applyAutoEffects(clips, assets, opts.ai?.style || brief.style);
 
   const total = clips.reduce((s, c) => s + (c.out - c.in) / c.speed, 0);
   const texts = buildTexts(brief, total, opts.ai, style.anims);
@@ -335,4 +337,65 @@ export const projectDuration = (p: Project) => p.clips.reduce((s, c) => s + (c.o
 
 export function formatSize(p: Project) {
   return FORMATS[p.format];
+}
+
+/* ---------- KI-Effekte (lokale Automatik) ---------- */
+
+/** Bewegung des Abschnitts, aus dem der Clip stammt (0–1) */
+function clipMotion(c: Clip, asset: MediaAsset | undefined) {
+  if (!asset?.analysis?.segments.length) return asset?.kind === 'image' ? 0 : 0.3;
+  const mid = (c.in + c.out) / 2;
+  const seg = asset.analysis.segments.find((s) => mid >= s.start && mid <= s.end);
+  const max = Math.max(...asset.analysis.segments.map((s) => s.motion), 0.0001);
+  return seg ? seg.motion / max : 0.3;
+}
+
+/**
+ * Setzt Effekte und Übergänge passend zu Stil, Inhalt und Rhythmus – ähnlich wie
+ * CapCuts „Auto-Effekte“: Hook bekommt Energie, bewegte Szenen Action-Effekte,
+ * Fotos weiche Effekte, Sprechpassagen bleiben ruhig.
+ */
+export function applyAutoEffects(clips: Clip[], assets: MediaAsset[], styleId: Style) {
+  const style = STYLES[styleId];
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  let lastTransition: Transition = 'none';
+  clips.forEach((c, i) => {
+    const asset = byId.get(c.assetId);
+    const motion = clipMotion(c, asset);
+    const talking = asset ? isTalking(asset) : false;
+    let effect: Effect = style.effects[i % style.effects.length];
+    let amount = 0.65;
+    if (styleId === 'dynamic' || styleId === 'bold') {
+      if (i === 0) { effect = styleId === 'bold' ? 'glitch' : 'pulse'; amount = 0.8; }
+      else if (motion > 0.7) { effect = 'shake'; amount = 0.5 + motion * 0.3; }
+      else if (asset?.kind === 'image') effect = 'pulse';
+    } else if (styleId === 'elegant') {
+      effect = asset?.kind === 'image' ? 'glow' : i % 3 === 0 ? 'lightleak' : 'vignette';
+      amount = 0.55;
+    } else {
+      effect = i === 0 ? 'none' : 'vignette';
+      amount = 0.4;
+    }
+    // Sprechende Personen nicht wackeln/glitchen lassen
+    if (talking && ['shake', 'glitch', 'strobe', 'rgb'].includes(effect)) { effect = 'pulse'; amount = 0.35; }
+    c.effect = effect;
+    c.effectAmount = +amount.toFixed(2);
+
+    if (i === 0) c.transition = 'none';
+    else if (!talking || styleId === 'elegant') {
+      const options = style.transitions.filter((t) => t !== lastTransition || style.transitions.length === 1);
+      c.transition = options[(i * 7) % options.length];
+    } else c.transition = 'none';
+    lastTransition = c.transition;
+  });
+  return clips;
+}
+
+/** Antwort der KI-Effekte auf die Clips anwenden */
+export function applyAiEffects(clips: Clip[], ai: AiEffects): Clip[] {
+  return clips.map((c, i) => {
+    const e = ai.clips[i];
+    if (!e) return c;
+    return { ...c, effect: e.effect, effectAmount: Math.min(1, Math.max(0, e.amount)), transition: i === 0 ? 'none' : e.transition, filter: e.filter, motion: e.motion };
+  });
 }
