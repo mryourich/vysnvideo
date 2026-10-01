@@ -4,25 +4,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as RPointerEvent } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ChevronLeft, Download, FolderOpen, Pause, Play, Redo2, SkipBack, SlidersHorizontal, Sparkles, Type, Undo2 } from 'lucide-react';
+import { ChevronLeft, Download, FolderOpen, Pause, Play, Redo2, SkipBack, SlidersHorizontal, Sparkles, Type, Undo2, Wand2 } from 'lucide-react';
 import { Brand } from '../brand';
 import { Timeline } from './timeline';
 import type { Selection } from './timeline';
 import { Inspector } from './inspector';
-import { AiPanel, MediaPanel, TextPresets } from './panels';
+import { AiPanel, EffectsPanel, MediaPanel, TextPresets } from './panels';
+import type { CaptionOptions } from './panels';
 import { ExportDialog } from './export-dialog';
 import { Player } from '../../lib/engine';
 import { db } from '../../lib/db';
-import { requestPlan } from '../../lib/ai';
+import { requestEffects, requestPlan } from '../../lib/ai';
+import { autoCaptions } from '../../lib/transcribe';
+import type { Language } from '../../lib/transcribe';
 import { storage } from '../../lib/browser';
-import { buildTexts, captionsFromScript, DEFAULT_BRIEF, generateProject, isTalking, newClip, projectDuration, removeSilence, shortlist, snapToBeats, text as makeText } from '../../lib/generate';
+import { applyAiEffects, applyAutoEffects, buildTexts, captionsFromScript, DEFAULT_BRIEF, generateProject, isTalking, newClip, projectDuration, removeSilence, shortlist, snapToBeats, text as makeText } from '../../lib/generate';
 import type { Candidate } from '../../lib/generate';
 import { layout } from '../../lib/render';
 import { STYLES } from '../../lib/types';
-import type { MediaAsset, Project, Style, TextItem } from '../../lib/types';
+import type { Effect, MediaAsset, Project, Style, TextItem, Transition } from '../../lib/types';
 import { clamp, now, timecode, uid } from '../../lib/util';
 
-type LeftTab = 'media' | 'text' | 'ai';
+type LeftTab = 'media' | 'text' | 'effects' | 'ai';
 type MobilePanel = LeftTab | 'inspect' | null;
 
 export function Editor() {
@@ -183,7 +186,7 @@ export function Editor() {
 
   function addText(style: TextItem['style'] = 'title') {
     if (!project) return;
-    const samples: Record<TextItem['style'], string> = { hook: 'Dein Hook hier', title: 'Titel', caption: 'Dein Untertitel', cta: 'Jetzt kaufen', label: 'Hinweis', price: '49 €' };
+    const samples: Record<TextItem['style'], string> = { hook: 'Dein Hook hier', title: 'Titel', caption: 'Dein Untertitel', cta: 'Jetzt kaufen', label: 'Hinweis', price: '49 €', neon: 'Neon' };
     const start = duration ? Math.min(time, Math.max(0, duration - 1)) : 0;
     const y = style === 'cta' ? 0.8 : style === 'caption' ? 0.74 : style === 'hook' ? 0.2 : 0.45;
     const item = makeText(samples[style], start, Math.max(start + 1, Math.min(duration || 3, start + 2.5)), 0.5, y, style, style === 'cta' ? 'pop' : 'fade', project.brandColor);
@@ -321,6 +324,93 @@ export function Editor() {
     notify(`${items.length} Untertitel erzeugt.`);
   }
 
+  /* ---------- Effekte & KI ---------- */
+  const currentClip = project
+    ? (selection?.type === 'clip' ? project.clips.find((c) => c.id === selection.id) : null)
+      || timeline.find((c) => time >= c.start && time < c.end)?.clip
+      || null
+    : null;
+
+  function applyEffect(effect: Effect, all: boolean) {
+    if (!project) return;
+    const target = all ? null : currentClip?.id;
+    if (!all && !target) return notify('Erst einen Clip auswählen.');
+    commit({ ...project, clips: project.clips.map((c) => (all || c.id === target ? { ...c, effect, effectAmount: c.effectAmount ?? 0.7 } : c)) });
+    if (!all && target) setSelection({ type: 'clip', id: target });
+    if (!playing) player.current?.play();
+  }
+
+  function applyTransition(transition: Transition, all: boolean) {
+    if (!project) return;
+    const target = all ? null : currentClip?.id;
+    if (!all && !target) return notify('Erst einen Clip auswählen.');
+    const clips = project.clips.map((c, i) => (i > 0 && (all || c.id === target) ? { ...c, transition } : c));
+    commit({ ...project, clips });
+    const at = timeline.find((c) => c.clip.id === (target || project.clips[1]?.id));
+    if (at) { seek(Math.max(0, at.start - 0.6)); player.current?.play(); }
+  }
+
+  async function aiEffects() {
+    if (!project) return;
+    const lib = [...assets.values()];
+    const brief = { ...DEFAULT_BRIEF, ...project.brief, format: project.format };
+    const music = project.music ? assets.get(project.music.assetId) : null;
+    setBusy('KI wählt Effekte …');
+    const frames = timeline.slice(0, 24).map((c) => {
+      const a = assets.get(c.clip.assetId)!;
+      const mid = (c.clip.in + c.clip.out) / 2;
+      const seg = a.analysis?.segments.find((s) => mid >= s.start && mid <= s.end);
+      const maxMotion = Math.max(...(a.analysis?.segments.map((s) => s.motion) || [0]), 0.0001);
+      return {
+        thumb: seg?.thumb || a.thumbs[0] || '',
+        length: c.end - c.start,
+        source: a.kind === 'image' ? 'Foto' : 'Video',
+        motion: seg ? seg.motion / maxMotion : 0,
+        speech: !!a.analysis?.speech.some(([x, y]) => x < c.clip.out && y > c.clip.in) && isTalking(a),
+      };
+    });
+    const res = frames.every((f) => f.thumb) ? await requestEffects(brief, frames, music?.analysis?.bpm ?? null) : { effects: null, note: null };
+    let clips;
+    if (res.effects?.clips?.length) {
+      clips = applyAiEffects(project.clips, res.effects);
+      notify('✨ KI-Effekte gesetzt (Claude).');
+    } else {
+      clips = applyAutoEffects(project.clips.map((c) => ({ ...c })), lib, brief.style);
+      notify('✨ Auto-Effekte gesetzt' + (res.note ? ' (lokale Automatik)' : '') + '.');
+    }
+    commit({ ...project, clips });
+    setBusy(null);
+    seek(0);
+    player.current?.play();
+  }
+
+  async function captions(o: CaptionOptions) {
+    if (!project) return;
+    setBusy('Spracherkennung startet …');
+    try {
+      const items = await autoCaptions(project, assets, { ...o, accent: project.brandColor }, (label, r) => setBusy(r !== undefined ? `${label} (${Math.round(r * 100)} %)` : label));
+      setAssets((m) => new Map(m));
+      if (!items.length) notify('Keine Sprache erkannt.');
+      else {
+        commit({ ...project, texts: [...project.texts.filter((t) => t.style !== 'caption' && !t.words), ...items] });
+        notify(`${items.length} Untertitel erzeugt.`);
+      }
+    } catch (e) {
+      notify('Spracherkennung fehlgeschlagen: ' + (e as Error).message);
+    }
+    setBusy(null);
+  }
+
+  // Automatische Untertitel direkt nach dem Erstellen (aus dem Assistenten)
+  const autoSubsDone = useRef(false);
+  useEffect(() => {
+    if (!project || autoSubsDone.current || !params?.get('subs')) return;
+    autoSubsDone.current = true;
+    setTab('ai');
+    captions({ language: (params.get('lang') as Language) || 'german', anim: 'karaoke', style: 'caption', upper: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project]);
+
   /* ---------- Text in der Vorschau verschieben ---------- */
   const textDrag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
   function canvasPoint(e: RPointerEvent<HTMLCanvasElement>) {
@@ -390,7 +480,7 @@ export function Editor() {
     );
   }
 
-  const leftOpen = mobile === 'media' || mobile === 'text' || mobile === 'ai';
+  const leftOpen = mobile === 'media' || mobile === 'text' || mobile === 'effects' || mobile === 'ai';
   const leftTab: LeftTab = leftOpen ? (mobile as LeftTab) : tab;
   const closeMobile = mobile ? () => setMobile(null) : undefined;
 
@@ -416,12 +506,14 @@ export function Editor() {
           <div className="tabs">
             <button className={`tab${leftTab === 'media' ? ' active' : ''}`} onClick={() => (leftOpen ? setMobile('media') : setTab('media'))}><FolderOpen size={17} />Medien</button>
             <button className={`tab${leftTab === 'text' ? ' active' : ''}`} onClick={() => (leftOpen ? setMobile('text') : setTab('text'))}><Type size={17} />Text</button>
+            <button className={`tab${leftTab === 'effects' ? ' active' : ''}`} onClick={() => (leftOpen ? setMobile('effects') : setTab('effects'))}><Wand2 size={17} />Effekte</button>
             <button className={`tab${leftTab === 'ai' ? ' active' : ''}`} onClick={() => (leftOpen ? setMobile('ai') : setTab('ai'))}><Sparkles size={17} />KI</button>
           </div>
           {project ? (
             leftTab === 'media' ? <MediaPanel project={project} assets={assets} onImported={imported} onAddClip={(a) => { addClip(a); setMobile(null); }} onUseMusic={applyMusic} onClose={closeMobile} />
               : leftTab === 'text' ? <TextPresets onAdd={(s) => addText(s)} onClose={closeMobile} />
-                : <AiPanel project={project} busy={busy} onRegenerate={regenerate} onRemoveSilenceAll={() => removeSilenceIn(project.clips.map((c) => c.id))} onSnapBeats={snapBeats} onShorten={shorten} onRewriteTexts={rewriteTexts} onScript={scriptCaptions} onClose={closeMobile} />
+                : leftTab === 'effects' ? <EffectsPanel project={project} current={currentClip} busy={busy} onApplyEffect={applyEffect} onApplyTransition={applyTransition} onAiEffects={aiEffects} onClose={closeMobile} />
+                : <AiPanel project={project} busy={busy} onAiEffects={aiEffects} onAutoCaptions={(o) => captions(o)} onRegenerate={regenerate} onRemoveSilenceAll={() => removeSilenceIn(project.clips.map((c) => c.id))} onSnapBeats={snapBeats} onShorten={shorten} onRewriteTexts={rewriteTexts} onScript={scriptCaptions} onClose={closeMobile} />
           ) : null}
         </aside>
 
@@ -456,6 +548,7 @@ export function Editor() {
       <nav className="mobile-tabs">
         <button className={mobile === 'media' ? 'active' : ''} onClick={() => setMobile(mobile === 'media' ? null : 'media')}><FolderOpen size={19} />Medien</button>
         <button className={mobile === 'text' ? 'active' : ''} onClick={() => setMobile(mobile === 'text' ? null : 'text')}><Type size={19} />Text</button>
+        <button className={mobile === 'effects' ? 'active' : ''} onClick={() => setMobile(mobile === 'effects' ? null : 'effects')}><Wand2 size={19} />Effekte</button>
         <button className={mobile === 'ai' ? 'active' : ''} onClick={() => setMobile(mobile === 'ai' ? null : 'ai')}><Sparkles size={19} />KI</button>
         <button className={mobile === 'inspect' ? 'active' : ''} onClick={() => setMobile(mobile === 'inspect' ? null : 'inspect')}><SlidersHorizontal size={19} />Bearbeiten</button>
       </nav>
@@ -479,7 +572,7 @@ function retime(p: Project, oldDuration: number): Project {
           const len = Math.min(t.end - t.start, d);
           return { ...t, start: +(d - len).toFixed(2), end: +d.toFixed(2) };
         }
-        return { ...t, start: +(t.start * f).toFixed(2), end: +(t.end * f).toFixed(2) };
+        return { ...t, start: +(t.start * f).toFixed(2), end: +(t.end * f).toFixed(2), words: t.words?.map((w) => ({ ...w, start: w.start * f, end: w.end * f })) };
       })
       .filter((t) => t.end - t.start > 0.2),
   };

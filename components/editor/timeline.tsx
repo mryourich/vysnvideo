@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as RPointerEvent } from 'react';
 import { ArrowLeftRight, Copy, Magnet, Scissors, Trash2, Type, ZoomIn, ZoomOut } from 'lucide-react';
 import { layout } from '../../lib/render';
+import { EFFECTS } from '../../lib/effects';
 import type { Clip, MediaAsset, Project, TextItem } from '../../lib/types';
 import { clamp, timecode } from '../../lib/util';
 
@@ -122,6 +123,8 @@ export function Timeline(props: Props) {
         const len = o.end - o.start;
         t.start = clamp(snapT(o.start + dt), 0, Math.max(0, duration - len));
         t.end = t.start + len;
+        const shift = t.start - o.start;
+        if (o.words) t.words = o.words.map((w) => ({ ...w, start: w.start + shift, end: w.end + shift }));
       } else if (d.kind === 'text-in') t.start = clamp(snapT(o.start + dt), 0, o.end - 0.3);
       else t.end = clamp(snapT(o.end + dt), o.start + 0.3, duration);
       t.start = +t.start.toFixed(2);
@@ -206,6 +209,7 @@ export function Timeline(props: Props) {
                     {c.clip.speed !== 1 ? <span>{c.clip.speed}×</span> : null}
                     {c.clip.volume === 0 && asset?.kind === 'video' ? <span>stumm</span> : null}
                   </div>
+                  {c.clip.effect && c.clip.effect !== 'none' ? <span className="clip-fx" title={EFFECTS[c.clip.effect].label}>{EFFECTS[c.clip.effect].icon}</span> : null}
                   {w > 60 ? <span className="clip-label">{(c.end - c.start).toFixed(1)} s</span> : null}
                   <span className="handle l" onPointerDown={(e) => start(e, { kind: 'clip-in', id: c.clip.id, x0: e.clientX, orig: c.clip })} />
                   <span className="handle r" onPointerDown={(e) => start(e, { kind: 'clip-out', id: c.clip.id, x0: e.clientX, orig: c.clip })} />

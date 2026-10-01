@@ -3,6 +3,7 @@
  */
 import type { Clip, Filter, Project, TextItem } from './types';
 import { clamp } from './util';
+import { applyOverlay, glitchTransition, motionFx } from './effects';
 
 export const TRANSITION_TIME = 0.45;
 
@@ -55,7 +56,15 @@ export type FrameInput = {
   logo?: HTMLImageElement | null;
   /** Hilfsrahmen um den ausgewählten Text */
   selectedText?: string | null;
+  /** Beats auf der Timeline (Musik) – ohne Musik die Schnittpunkte */
+  beats?: number[];
 };
+
+/** Beats der Musik in Timeline-Zeit; ohne Musik dienen die Schnitte als Takt. */
+export function timelineBeats(project: Project, timeline: Timed[], musicBeats?: number[]) {
+  if (project.music && musicBeats?.length) return musicBeats.map((b) => b - project.music!.offset).filter((b) => b >= 0);
+  return timeline.map((c) => c.start);
+}
 
 export function drawFrame(ctx: CanvasRenderingContext2D, W: number, H: number, input: FrameInput): HitBox[] {
   const { project, timeline, t } = input;
@@ -63,6 +72,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, W: number, H: number, i
   ctx.fillStyle = project.background || '#000';
   ctx.fillRect(0, 0, W, H);
 
+  frameBeats = input.beats || [];
   const cur = clipAt(timeline, t);
   if (cur) {
     const local = t - cur.start;
@@ -93,12 +103,25 @@ export function drawFrame(ctx: CanvasRenderingContext2D, W: number, H: number, i
           drawClip(ctx, W, H, prev, prev.end - 0.01, input.source(prev.index), { blur: pe * 24, alpha: 1 - pe });
           drawClip(ctx, W, H, cur, t, input.source(cur.index), { blur: (1 - pe) * 24, alpha: pe });
           break;
+        case 'whip':
+          drawClip(ctx, W, H, prev, prev.end - 0.01, input.source(prev.index), { dx: -pe * W, blur: Math.sin(p * Math.PI) * 18 });
+          drawClip(ctx, W, H, cur, t, input.source(cur.index), { dx: (1 - pe) * W, blur: Math.sin(p * Math.PI) * 18 });
+          break;
+        case 'spin':
+          drawClip(ctx, W, H, prev, prev.end - 0.01, input.source(prev.index), { rotate: pe * 0.9, scale: 1 + pe * 0.6, alpha: 1 - pe });
+          drawClip(ctx, W, H, cur, t, input.source(cur.index), { rotate: (pe - 1) * 0.9, scale: 1.6 - pe * 0.6, alpha: pe });
+          break;
+        case 'glitch':
+          drawClip(ctx, W, H, p < 0.5 ? prev : cur, p < 0.5 ? prev.end - 0.01 : t, input.source(p < 0.5 ? prev.index : cur.index), {});
+          glitchTransition(ctx, W, H, p, t);
+          break;
         default:
           drawClip(ctx, W, H, cur, t, input.source(cur.index), {});
       }
     } else {
       drawClip(ctx, W, H, cur, t, input.source(cur.index), {});
     }
+    applyOverlay(ctx, W, H, cur.clip.effect, cur.clip.effectAmount ?? 0.7, t, input.beats || []);
   }
 
   const boxes: HitBox[] = [];
@@ -136,7 +159,9 @@ export function drawFrame(ctx: CanvasRenderingContext2D, W: number, H: number, i
   return boxes;
 }
 
-type DrawOpts = { alpha?: number; scale?: number; dx?: number; blur?: number };
+type DrawOpts = { alpha?: number; scale?: number; dx?: number; blur?: number; rotate?: number };
+
+let frameBeats: number[] = [];
 
 function drawClip(ctx: CanvasRenderingContext2D, W: number, H: number, c: Timed, t: number, src: Source, o: DrawOpts) {
   if (!src || !src.w || !src.h) return;
@@ -155,12 +180,21 @@ function drawClip(ctx: CanvasRenderingContext2D, W: number, H: number, c: Timed,
     case 'pan-right': scale = 1.14; mx = -0.06 + 0.12 * p; break;
   }
   scale *= o.scale ?? 1;
+  const fx = motionFx(clip.effect, clip.effectAmount ?? 0.7, t, frameBeats, W);
+  scale *= fx.scale;
 
   ctx.save();
   ctx.globalAlpha = o.alpha ?? 1;
+  const rot = (o.rotate ?? 0) + fx.rotate;
+  if (rot) {
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(rot);
+    ctx.translate(-W / 2, -H / 2);
+  }
   const base = FILTERS[clip.filter] || 'none';
   const blur = o.blur ? `blur(${o.blur.toFixed(1)}px)` : '';
-  const filter = [base === 'none' ? '' : base, blur].filter(Boolean).join(' ') || 'none';
+  const bright = fx.brightness !== 1 ? `brightness(${fx.brightness.toFixed(2)})` : '';
+  const filter = [base === 'none' ? '' : base, blur, bright].filter(Boolean).join(' ') || 'none';
 
   if (clip.fit === 'contain') {
     // Unscharfer Hintergrund + vollständiges Bild
@@ -172,8 +206,8 @@ function drawClip(ctx: CanvasRenderingContext2D, W: number, H: number, c: Timed,
   const fit = clip.fit === 'contain' ? Math.min(W / src.w, H / src.h) : Math.max(W / src.w, H / src.h);
   const dw = src.w * fit * scale;
   const dh = src.h * fit * scale;
-  const x = (W - dw) / 2 + mx * W + (o.dx ?? 0);
-  const y = (H - dh) / 2 + my * H;
+  const x = (W - dw) / 2 + mx * W + (o.dx ?? 0) + fx.dx;
+  const y = (H - dh) / 2 + my * H + fx.dy;
   ctx.drawImage(src.el, x, y, dw, dh);
   ctx.restore();
 }
@@ -187,11 +221,24 @@ export const TEXT_STYLES: Record<TextItem['style'], { label: string; size: numbe
   cta: { label: 'Call-to-Action', size: 0.058, weight: 800, upper: false },
   label: { label: 'Hinweis', size: 0.04, weight: 600, upper: false },
   price: { label: 'Preis / Zahl', size: 0.13, weight: 900, upper: false },
+  neon: { label: 'Neon', size: 0.075, weight: 800, upper: true },
 };
 
 export const ANIM_LABELS: Record<TextItem['anim'], string> = {
   none: 'Keine', pop: 'Pop', fade: 'Einblenden', 'slide-up': 'Von unten', typewriter: 'Schreibmaschine', bounce: 'Hüpfen',
+  karaoke: 'Karaoke', word: 'Wort für Wort',
 };
+
+/** Index des gerade gesprochenen Worts (mit Spracherkennungs-Zeiten oder gleichmäßig verteilt) */
+function activeWord(item: TextItem, t: number, count: number) {
+  if (item.words?.length === count) {
+    let idx = -1;
+    item.words.forEach((w, i) => { if (t >= w.start - 0.02) idx = i; });
+    return idx;
+  }
+  const span = Math.max(0.2, (item.end - item.start) * 0.9);
+  return Math.min(count - 1, Math.floor(((t - item.start) / span) * count));
+}
 
 const FONT = '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif';
 
@@ -280,22 +327,70 @@ function drawText(ctx: CanvasRenderingContext2D, W: number, H: number, item: Tex
     ctx.fill();
     ctx.shadowColor = 'transparent';
   }
-  lines.forEach((line, i) => {
-    const y = top + lineH * (i + 0.5);
+  const wordMode = item.anim === 'karaoke' || item.anim === 'word';
+  const drawLine = (line: string, x: number, y: number, color: string) => {
     if (item.style === 'caption' || item.style === 'title' || item.style === 'price') {
       ctx.lineJoin = 'round';
       ctx.lineWidth = size * (item.style === 'price' ? 0.16 : 0.18);
       ctx.strokeStyle = item.style === 'price' ? '#ffffff' : 'rgba(0,0,0,0.85)';
-      ctx.strokeText(line, 0, y);
+      ctx.strokeText(line, x, y);
     }
     if (item.style === 'title') {
       ctx.shadowColor = 'rgba(0,0,0,0.5)';
       ctx.shadowBlur = size * 0.4;
     }
-    ctx.fillStyle = item.style === 'price' ? item.accent : item.color;
-    ctx.fillText(line, 0, y);
+    if (item.style === 'neon') {
+      ctx.shadowColor = item.accent;
+      ctx.shadowBlur = size * 0.6;
+      ctx.lineWidth = size * 0.06;
+      ctx.strokeStyle = item.accent;
+      ctx.strokeText(line, x, y);
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(line, x, y);
     ctx.shadowColor = 'transparent';
-  });
+    ctx.shadowBlur = 0;
+  };
+  const baseColor = item.style === 'price' ? item.accent : item.color;
+
+  if (wordMode) {
+    // Wort für Wort zeichnen, aktives Wort hervorheben
+    const count = fullLines.reduce((n, l) => n + l.split(' ').filter(Boolean).length, 0);
+    const active = activeWord(item, t, count);
+    let k = 0;
+    ctx.textAlign = 'left';
+    const space = ctx.measureText(' ').width + size * 0.28;
+    fullLines.forEach((line, i) => {
+      const y = top + lineH * (i + 0.5);
+      const words = line.split(' ').filter(Boolean);
+      const lineW = words.reduce((sum, w) => sum + ctx.measureText(w).width, 0) + space * (words.length - 1);
+      let x = -lineW / 2;
+      for (const w of words) {
+        const ww = ctx.measureText(w).width;
+        const isActive = k === active;
+        if (item.anim === 'word' && k > active) break;
+        ctx.save();
+        if (isActive) {
+          const since = item.words?.[k] ? t - item.words[k].start : (t - item.start) % 0.3;
+          const pop = item.anim === 'word' ? 0.7 + 0.3 * Math.min(1, since / 0.12) : 1.05;
+          ctx.translate(x + ww / 2, y);
+          ctx.scale(pop, pop);
+          ctx.translate(-(x + ww / 2), -y);
+          if (item.anim === 'karaoke' && item.style !== 'neon') {
+            ctx.fillStyle = item.accent;
+            roundRect(ctx, x - size * 0.12, y - size * 0.6, ww + size * 0.24, size * 1.2, size * 0.22);
+            ctx.fill();
+          }
+        }
+        drawLine(w, x, y, isActive && item.anim === 'word' ? item.accent : baseColor);
+        ctx.restore();
+        x += ww + space;
+        k++;
+      }
+    });
+  } else {
+    lines.forEach((line, i) => drawLine(line, 0, top + lineH * (i + 0.5), baseColor));
+  }
   ctx.restore();
 
   const bw = (widest + padX * 2) * scale;

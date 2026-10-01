@@ -1,11 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { AudioWaveform, Captions, Clock, Film, ListOrdered, Music, Plus, RefreshCw, Sparkles, Upload, X } from 'lucide-react';
+import { AudioWaveform, Captions, Clock, Film, ListOrdered, Mic, Music, Plus, RefreshCw, Sparkles, Upload, Wand2, X } from 'lucide-react';
+import { EFFECTS } from '../../lib/effects';
+import { LANGUAGES } from '../../lib/transcribe';
+import type { Language } from '../../lib/transcribe';
 import { importFile } from '../../lib/analyze';
 import { db, registerUrl } from '../../lib/db';
 import { STYLES } from '../../lib/types';
-import type { MediaAsset, Project, Style, TextItem } from '../../lib/types';
+import type { Clip, Effect, MediaAsset, Project, Style, TextItem, Transition } from '../../lib/types';
 import { TEXT_STYLES } from '../../lib/render';
 
 /* ---------------- Medien ---------------- */
@@ -74,7 +77,7 @@ export function MediaPanel({ project, assets, onImported, onAddClip, onUseMusic,
 /* ---------------- Texte ---------------- */
 
 export function TextPresets({ onAdd, onClose }: { onAdd: (style: TextItem['style']) => void; onClose?: () => void }) {
-  const samples: Record<TextItem['style'], string> = { hook: 'Hook', title: 'Titel', caption: 'Untertitel', cta: 'Jetzt kaufen', label: 'Hinweis', price: '49 €' };
+  const samples: Record<TextItem['style'], string> = { hook: 'Hook', title: 'Titel', caption: 'Untertitel', cta: 'Jetzt kaufen', label: 'Hinweis', price: '49 €', neon: 'NEON' };
   return (
     <div className="side-scroll">
       {onClose ? <div className="field-row"><span className="side-title" style={{ flex: 1 }}>Text</span><button className="icon-btn side-close" onClick={onClose}><X size={18} /></button></div> : null}
@@ -93,9 +96,13 @@ export function TextPresets({ onAdd, onClose }: { onAdd: (style: TextItem['style
 
 /* ---------------- KI-Werkzeuge ---------------- */
 
-export function AiPanel({ project, busy, onRegenerate, onRemoveSilenceAll, onSnapBeats, onShorten, onRewriteTexts, onScript, onClose }: {
+export type CaptionOptions = { language: Language; anim: TextItem['anim']; style: TextItem['style']; upper: boolean };
+
+export function AiPanel({ project, busy, onRegenerate, onRemoveSilenceAll, onSnapBeats, onShorten, onRewriteTexts, onScript, onAiEffects, onAutoCaptions, onClose }: {
   project: Project;
   busy: string | null;
+  onAiEffects: () => void;
+  onAutoCaptions: (o: CaptionOptions) => void;
   onRegenerate: (style: Style) => void;
   onRemoveSilenceAll: () => void;
   onSnapBeats: () => void;
@@ -105,6 +112,7 @@ export function AiPanel({ project, busy, onRegenerate, onRemoveSilenceAll, onSna
   onClose?: () => void;
 }) {
   const [script, setScript] = useState('');
+  const [caps, setCaps] = useState<CaptionOptions>({ language: 'german', anim: 'karaoke', style: 'caption', upper: false });
   const [style, setStyle] = useState<Style>(project.brief?.style || 'dynamic');
   return (
     <div className="side-scroll">
@@ -121,6 +129,10 @@ export function AiPanel({ project, busy, onRegenerate, onRemoveSilenceAll, onSna
         <button className="ai-tool" disabled={!!busy} onClick={() => onRegenerate(style)}>
           <RefreshCw size={18} />
           <span><strong>Video neu generieren</strong><small>Mit allen Medien und dem gewählten Stil komplett neu schneiden. Rückgängig mit Strg+Z.</small></span>
+        </button>
+        <button className="ai-tool" disabled={!!busy || !project.clips.length} onClick={onAiEffects}>
+          <Wand2 size={18} />
+          <span><strong>KI-Effekte</strong><small>Effekte, Übergänge, Filter und Kamerafahrten passend zu Szene und Beat setzen.</small></span>
         </button>
         <button className="ai-tool" disabled={!!busy} onClick={onRewriteTexts}>
           <Sparkles size={18} />
@@ -151,10 +163,81 @@ export function AiPanel({ project, busy, onRegenerate, onRemoveSilenceAll, onSna
       </div>
 
       <div className="group">
+        <span className="side-title"><Mic size={13} style={{ verticalAlign: -2 }} /> Auto-Untertitel (Spracherkennung)</span>
+        <div className="segmented">
+          {(Object.keys(LANGUAGES) as Language[]).map((l) => <button key={l} className={caps.language === l ? 'active' : ''} onClick={() => setCaps({ ...caps, language: l })}>{LANGUAGES[l]}</button>)}
+        </div>
+        <div className="chips">
+          {([['karaoke', 'Karaoke'], ['word', 'Wort für Wort'], ['pop', 'Klassisch']] as [TextItem['anim'], string][]).map(([a, label]) => (
+            <button key={a} className={`chip${caps.anim === a ? ' active' : ''}`} onClick={() => setCaps({ ...caps, anim: a })}>{label}</button>
+          ))}
+          <button className={`chip${caps.style === 'neon' ? ' active' : ''}`} onClick={() => setCaps({ ...caps, style: caps.style === 'neon' ? 'caption' : 'neon' })}>Neon</button>
+          <button className={`chip${caps.upper ? ' active' : ''}`} onClick={() => setCaps({ ...caps, upper: !caps.upper })}>GROSS</button>
+        </div>
+        <button className="ai-tool" disabled={!!busy || !project.clips.length} onClick={() => onAutoCaptions(caps)}>
+          <Captions size={18} />
+          <span><strong>Untertitel automatisch erzeugen</strong><small>Whisper-KI erkennt das Gesprochene wortgenau – direkt im Browser. Beim ersten Mal wird das Modell (~80 MB) geladen.</small></span>
+        </button>
+      </div>
+
+      <div className="group">
         <span className="side-title"><Captions size={13} style={{ verticalAlign: -2 }} /> Untertitel aus Skript</span>
         <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={4} placeholder="Gesprochenen Text hier einfügen – er wird automatisch auf die Sprechpassagen verteilt." />
         <button className="btn btn-sm" disabled={!script.trim()} onClick={() => onScript(script)}><ListOrdered size={14} /> Untertitel erzeugen</button>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Effekte ---------------- */
+
+const TRANSITION_TILES: [Transition, string, string][] = [
+  ['none', '✂️', 'Schnitt'], ['fade', '🌫️', 'Überblenden'], ['zoom', '🔍', 'Zoom'], ['slide', '➡️', 'Schieben'], ['whip', '💨', 'Wischen'],
+  ['spin', '🌀', 'Drehen'], ['flash', '⚡', 'Blitz'], ['blur', '💧', 'Unschärfe'], ['glitch', '👾', 'Glitch'],
+];
+
+export function EffectsPanel({ project, current, busy, onApplyEffect, onApplyTransition, onAiEffects, onClose }: {
+  project: Project;
+  /** Clip, auf den Effekte angewendet werden (ausgewählt oder am Abspielkopf) */
+  current: Clip | null;
+  busy: string | null;
+  onApplyEffect: (e: Effect, all: boolean) => void;
+  onApplyTransition: (t: Transition, all: boolean) => void;
+  onAiEffects: () => void;
+  onClose?: () => void;
+}) {
+  const [all, setAll] = useState(false);
+  return (
+    <div className="side-scroll">
+      {onClose ? <div className="field-row"><span className="side-title" style={{ flex: 1 }}>Effekte</span><button className="icon-btn side-close" onClick={onClose}><X size={18} /></button></div> : null}
+      <button className="ai-tool" disabled={!!busy || !project.clips.length} onClick={onAiEffects}>
+        <Wand2 size={18} />
+        <span><strong>KI-Effekte für das ganze Video</strong><small>Die KI wählt pro Clip Effekt, Übergang, Filter und Kamerafahrt.</small></span>
+      </button>
+      {busy ? <div className="notice" style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span className="spinner" /> {busy}</div> : null}
+      <div className="segmented">
+        <button className={!all ? 'active' : ''} onClick={() => setAll(false)}>Aktueller Clip</button>
+        <button className={all ? 'active' : ''} onClick={() => setAll(true)}>Alle Clips</button>
+      </div>
+      <span className="side-title">Video-Effekte</span>
+      <div className="fx-grid">
+        {(Object.keys(EFFECTS) as Effect[]).map((e) => (
+          <button key={e} className={`fx-tile${!all && current?.effect === e ? ' active' : ''}`} disabled={!project.clips.length} onClick={() => onApplyEffect(e, all)} title={EFFECTS[e].hint}>
+            <span>{EFFECTS[e].icon}</span>
+            {EFFECTS[e].label}
+            {EFFECTS[e].beat ? <i>Beat</i> : null}
+          </button>
+        ))}
+      </div>
+      <span className="side-title">Übergänge</span>
+      <div className="fx-grid">
+        {TRANSITION_TILES.map(([t, icon, label]) => (
+          <button key={t} className={`fx-tile${!all && current?.transition === t ? ' active' : ''}`} disabled={!project.clips.length} onClick={() => onApplyTransition(t, all)}>
+            <span>{icon}</span>{label}
+          </button>
+        ))}
+      </div>
+      <p className="hint">{all ? 'Wird auf alle Clips angewendet.' : current ? 'Wird auf den ausgewählten Clip (bzw. den am Abspielkopf) angewendet. Übergänge gelten am Anfang des Clips.' : 'Clip auswählen oder Abspielkopf auf einen Clip setzen.'}</p>
     </div>
   );
 }

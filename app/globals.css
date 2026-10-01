@@ -211,6 +211,7 @@ input[type='color'] { width: 36px; height: 32px; padding: 2px; border-radius: 8p
 .tp-cta span { background: var(--primary); padding: 6px 12px; border-radius: 999px; font-size: 13px; }
 .tp-label span { background: rgba(0, 0, 0, 0.55); padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
 .tp-price { font-size: 22px; color: #1a7dff; -webkit-text-stroke: 4px #fff; paint-order: stroke fill; transform: rotate(-4deg); font-weight: 900; }
+.tp-neon { font-size: 18px; color: #fff; text-shadow: 0 0 6px #1a7dff, 0 0 14px #1a7dff, 0 0 24px #00d8d8; letter-spacing: 0.05em; }
 
 .ai-tool { display: flex; gap: 11px; align-items: flex-start; text-align: left; width: 100%; padding: 11px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; color: var(--ink); }
 .ai-tool:hover:not(:disabled) { border-color: rgba(0, 216, 216, 0.5); background: rgba(0, 216, 216, 0.06); }
@@ -321,3 +322,13 @@ input[type='color'] { width: 36px; height: 32px; padding: 2px; border-radius: 8p
   .projects { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 }
 .side-close { display: none !important; }
+
+/* Effekte */
+.fx-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.fx-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 8px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-2); font-size: 11.5px; font-weight: 600; cursor: pointer; text-align: center; line-height: 1.2; }
+.fx-tile span { font-size: 22px; line-height: 1; }
+.fx-tile i { position: absolute; top: 4px; right: 4px; font-style: normal; font-size: 8.5px; font-weight: 700; padding: 1px 4px; border-radius: 4px; background: rgba(0, 216, 216, 0.18); color: var(--accent); }
+.fx-tile:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.3); color: #fff; }
+.fx-tile.active { border-color: var(--primary); background: var(--primary-soft); color: #fff; }
+.fx-tile:disabled { opacity: 0.4; cursor: not-allowed; }
+.clip-fx { position: absolute; right: 5px; top: 4px; font-size: 11px; pointer-events: none; text-shadow: 0 1px 3px #000; }

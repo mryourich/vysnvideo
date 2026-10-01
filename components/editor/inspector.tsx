@@ -2,8 +2,9 @@
 
 import { AudioWaveform, Copy, Image as ImageIcon, Scissors, Trash2, X } from 'lucide-react';
 import { FILTER_LABELS, ANIM_LABELS, TEXT_STYLES } from '../../lib/render';
+import { EFFECTS } from '../../lib/effects';
 import { FORMATS } from '../../lib/types';
-import type { Clip, Filter, Format, MediaAsset, Motion, Project, TextItem, Transition } from '../../lib/types';
+import type { Clip, Effect, Filter, Format, MediaAsset, Motion, Project, TextItem, Transition } from '../../lib/types';
 import { readLogo } from '../../lib/browser';
 import type { Selection } from './timeline';
 
@@ -20,7 +21,7 @@ type Props = {
   onClose?: () => void;
 };
 
-const TRANSITIONS: Record<Transition, string> = { none: 'Schnitt', fade: 'Überblenden', zoom: 'Zoom', slide: 'Schieben', flash: 'Blitz', blur: 'Unschärfe' };
+const TRANSITIONS: Record<Transition, string> = { none: 'Schnitt', fade: 'Überblenden', zoom: 'Zoom', slide: 'Schieben', flash: 'Blitz', blur: 'Unschärfe', whip: 'Wischen', spin: 'Drehen', glitch: 'Glitch' };
 const MOTIONS: Record<Motion, string> = { none: 'Keine', 'zoom-in': 'Zoom rein', 'zoom-out': 'Zoom raus', 'pan-left': 'Schwenk ←', 'pan-right': 'Schwenk →' };
 const FILTER_CSS: Record<Filter, string> = {
   none: 'none', vivid: 'saturate(1.35) contrast(1.08)', warm: 'sepia(0.22) saturate(1.25)', cool: 'hue-rotate(-10deg)',
@@ -91,6 +92,24 @@ function ClipPanel({ project, assets, clip, onChange, onSplit, onDelete, onDupli
           </div>
         </div>
       )}
+
+      <div className="group">
+        <span className="side-title">Effekt</span>
+        <div className="fx-grid">
+          {(Object.keys(EFFECTS) as Effect[]).map((e) => (
+            <button key={e} className={`fx-tile${(clip.effect || 'none') === e ? ' active' : ''}`} onClick={() => set({ effect: e })} title={EFFECTS[e].hint}>
+              <span>{EFFECTS[e].icon}</span>{EFFECTS[e].label}
+            </button>
+          ))}
+        </div>
+        {clip.effect && clip.effect !== 'none' ? (
+          <div className="range-row">
+            <span className="field-label">Stärke</span>
+            <input type="range" min={0.1} max={1} step={0.05} value={clip.effectAmount ?? 0.7} onChange={(e) => set({ effectAmount: +e.target.value }, `fx-${clip.id}`)} />
+            <output>{Math.round((clip.effectAmount ?? 0.7) * 100)} %</output>
+          </div>
+        ) : null}
+      </div>
 
       <div className="group">
         <span className="side-title">Filter</span>

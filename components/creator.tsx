@@ -22,6 +22,7 @@ export function Creator({ files, onAdd, onCancel }: { files: File[]; onAdd: (f: 
   const [brief, setBrief] = useState<Brief>(() => ({ ...DEFAULT_BRIEF, ...storage.get<Partial<Brief>>('vv-brief', {}) }));
   const [auto, setAuto] = useState(() => storage.get('vv-auto', true));
   const [logo, setLogo] = useState(() => storage.get('vv-logo', ''));
+  const [subs, setSubs] = useState(() => storage.get('vv-subs', true));
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const touched = useRef(false);
@@ -34,6 +35,7 @@ export function Creator({ files, onAdd, onCancel }: { files: File[]; onAdd: (f: 
 
   useEffect(() => storage.set('vv-brief', { ...brief, product: '', message: '', cta: '' }), [brief]);
   useEffect(() => storage.set('vv-auto', auto), [auto]);
+  useEffect(() => storage.set('vv-subs', subs), [subs]);
 
   // Neue Dateien in die Liste übernehmen
   useEffect(() => {
@@ -93,7 +95,7 @@ export function Creator({ files, onAdd, onCancel }: { files: File[]; onAdd: (f: 
       setBusy('Video wird geschnitten …');
       const project = generateProject(ready, brief, { ai: plan, shortlist: list, logo });
       await db.saveProject(project);
-      router.push(`/editor?id=${project.id}${plan ? '&ai=1' : ''}`);
+      router.push(`/editor?id=${project.id}${plan ? '&ai=1' : ''}${subs && talking ? '&subs=1&lang=german' : ''}`);
     } catch (e) {
       setBusy(null);
       setError((e as Error).message || 'Video konnte nicht erstellt werden.');
@@ -224,6 +226,7 @@ export function Creator({ files, onAdd, onCancel }: { files: File[]; onAdd: (f: 
         </div>
 
         <label className="check"><input type="checkbox" checked={brief.removeSilence} onChange={(e) => set('removeSilence', e.target.checked)} /> Pausen in Sprechvideos automatisch herausschneiden</label>
+        <label className="check"><input type="checkbox" checked={subs} onChange={(e) => setSubs(e.target.checked)} /> Untertitel automatisch erzeugen, wenn gesprochen wird (Spracherkennung)</label>
         <label className="check"><input type="checkbox" checked={brief.useAi} onChange={(e) => set('useAi', e.target.checked)} /> KI-Regie: Szenen auswählen und Texte schreiben lassen</label>
         <label className="check"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Nach dem Hochladen sofort automatisch erstellen</label>
 
